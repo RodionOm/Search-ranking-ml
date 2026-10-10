@@ -1,103 +1,86 @@
-# Search Ranking & Discoverability
-
-Which pages should a reviewer look at first, when there are far more pages
-than anyone can review?
-
-This is my work from the FlyRank AI machine learning internship (Jul–Sep 2026).
-The repository started from the programme's template; everything in `work/` and
-the write-up below are mine.
-
----
-
-## The problem
-
-A content team can review a few dozen pages a week. The site has tens of
-thousands. So the real question is not "will this page perform well" — it's
-**"what order should the queue be in"**.
-
-That reframing changes everything downstream:
-
-- It's a **ranking** problem, not a classification problem
-- The right metric is **Precision@K**, not accuracy — a reviewer only ever
-  sees the top of the list, so what happens at rank 4,000 is irrelevant
-- A model that is right 90% of the time overall but wrong about the top 50
-  is worse than useless
-
----
-
-## Data
-
-- **Starter slice** — ~30k pages, anonymised, 44 columns (shipped in `data/raw/`)
-- **Full release** — ~79M rows, queried directly with **DuckDB** over a dataset
-  hosted on Hugging Face, no local download
-
-No client names, domains, URLs, titles or keywords appear anywhere in this
-repository. See `DATA_USE.md`.
-
----
-
-## Approach
-
-**1. A transparent baseline first.**
-Before any model, a hand-written rule that scores "fix this first". If a model
-can't beat a rule you can read out loud, the model isn't earning its place.
-
-**2. Features, with a leakage check as its own step.**
-This is where my first attempt went wrong — see below.
-
-**3. Models.**
-Logistic regression, decision tree and random forest, trained on a
-**client-holdout split** rather than a random one.
-
-**4. Evaluation as a ranked queue.**
-The output is not a score column, it's an ordered list of pages to review,
-plus charts and a written report.
-
----
-
-## What broke, and what I changed
-
-**Information leaked between training and test.** My first split was random,
-which meant pages from the same client landed on both sides. The model looked
-strong and wasn't — it was partly recognising clients rather than learning what
-makes a page worth reviewing. I rebuilt the split as **client-holdout**: a
-client appears in training or in test, never both. The scores dropped, and
-became true.
-
-That was the lesson of the internship for me: **validation fails quietly.**
-A broken model is obvious. A broken evaluation looks like success.
-
-**Accuracy was the wrong instrument from the start.** Most pages don't need a
-refresh, so a model that says "no" to everything scores well and is worthless.
-Precision@K measures the only thing a reviewer experiences.
-
----
-
-## Repository structure
-notebooks/ exploration — first look at the data, first readable model
-scripts/ the pipeline: prepare → baseline → train → evaluate → report
-work/ my assignment notebooks and capstone
-data/raw/ anonymised starter dataset
-outputs/ generated reports, ranked queue, charts
-docs/ data dictionary (all 44 columns) and framework notes
 
 
-### The pipeline
+Search ranking ml readme · MD
+Search Ranking & Discoverability
+Which pages should a content reviewer look at first, when there are far more pages than anyone can review?
 
-01_prepare_features.py clean, build the feature vector, define the label
-02_baseline_score.py transparent hand-rule "fix this first" score
-03_train_model.py logistic regression / decision tree / random forest,
-client-holdout split
-04_evaluate_and_export.py ranked queue, charts, Markdown report
-05_build_pdf_report.py shareable PDF summary
+My work from the FlyRank AI machine learning internship (Jul–Sep 2026). The repository started from the programme's template; everything in work/ and this write-up are mine.
 
-## Status
+Result in one line
+On clients the model had never seen, a logistic regression ranked pages so that 44 of its top 50 were observed to decline (Precision@50 = 0.88), against 0.80 for my rule-based baseline and a 0.54 base rate.
 
-Capstone write-up in progress — final model comparison and the SHAP-based
-explanation of what drives a page up the queue.
+The problem
+A content team can review a few dozen pages a week; the sites have tens of thousands. So the question is not "will this page perform well" but "which pages deserve a human's limited attention first?" That makes it a ranking problem under a capacity limit:
 
----
+Unit: one content page.
+Label: did the page's search impressions go down in the last 30 days compared with the 30 days before? (54.2% of pages did.)
+Metric: Precision@K, the share of the top K pages that actually declined. Reviewers only work down the top of the list, so accuracy over all 30,000 pages would measure the wrong thing.
+What I did
+Step	Notebook	What it does
+Research question	w01_research_question	Framed refresh review as decision support under limited capacity
+ML task framing	w02_ml_task_framing	Binary classification used as a ranking; Precision@K as the metric
+Data contract	w03_data_contract	Checked the warehouse grain (9.8M page-day rows in March 2026), feature / label / excluded fields, a deliberate leakage trap
+Leakage check	w03_feature_leakage_check	23 leakage-safe features from the windows before the label period
+Baseline	w04_baseline_score	A transparent hand-written rule to beat
+Model	w05_model	Logistic regression and gradient boosting, out-of-fold, grouped by client
+Validation audit	w06_validation_audit	Random vs client split, leakage trap test
+Action playbook	w07_action_playbook	A review queue with reason codes, limits, monitoring
+w04_signal_audit (optional) and capstone are not completed.
 
-*Part of the FlyRank AI ML internship. Code MIT (`LICENSE`); data terms in
-`DATA_USE.md`. Results here are observed and directional decision-support —
-not a claim about how any search engine ranks pages.*
+Leakage: the most important finding
+The label compares the last 30 days with the previous 30. Any 90-day total contains the last 30 days, so it already holds the answer.
+
+|---- older 30 days ----|---- previous 30 days ----|---- last 30 days ----|
+       feature ✓                  feature ✓               label window ✗
+|<------------------------ 90-day totals ✗ ------------------------------->|
+                                                   ^ prediction point
+Feature set	AUC
+Honest features only	0.680
++ impressions in the label window	0.999
++ 90-day totals and rates	0.909
+Only data from before the prediction point is used.
+
+Results (5-fold GroupKFold by client, out-of-fold)
+Every page is scored by a model that never saw its client.
+
+Method	P@10	P@20	P@50	P@500	AUC
+Random (expected)	0.54	0.54	0.54	0.54	0.500
+Baseline rule	0.60	0.65	0.80	0.78	0.650
+Logistic regression	0.80	0.85	0.88	0.83	0.673
+Gradient boosting (HGB)	0.50	0.65	0.72	0.67	0.698
+Gradient boosting has the best AUC but a worse top of the list, which is what reviewers use. Logistic regression wins where it matters and gives readable reasons.
+
+Why the split matters
+Split	Model	P@500	AUC
+Random KFold (same client in train and test)	gradient boosting	0.93	0.792
+GroupKFold by client	gradient boosting	0.67	0.698
+Random KFold	logistic regression	0.87	0.726
+GroupKFold by client	logistic regression	0.83	0.673
+A random split lets gradient boosting memorise clients; on unseen clients its top 500 drops from 0.93 to 0.67. Logistic regression is too simple to memorise a client, so it holds up.
+
+Trap test
+Adding a leaky column on purpose sends AUC to 1.0, which shows the evaluation catches leakage. The honest 23 features have no column from the label window.
+
+The review queue
+w07_action_playbook turns the scores into a queue a human can use:
+
+Top 50 pages, at most 5 per client: 46 of 50 declined, 14 clients covered.
+Two plain-English reason codes per page, from the logistic regression's weights (weight × how far the page is from average).
+Confidence bands checked against outcomes: low 0.35, medium 0.59, high 0.69 observed decline rate.
+Review flags: 19 of 50 queued pages need an extra check (spike-driven, short history, no keyword data).
+Limits (stated openly)
+Mid-traffic pages: AUC only 0.57–0.59; ranking there is close to chance.
+One snapshot: a single 30-day label period; no time-based split across months.
+Not causal: a high score means similar pages declined, not that a refresh will stop the decline.
+Decision support: a short list for a reviewer, not a traffic forecast.
+Run it
+Each notebook opens in Colab and clones the starter data itself. Locally:
+
+bash
+pip install -r requirements.txt
+jupyter lab work/notebooks/
+data/raw/ holds the anonymised starter dataset from the programme; warehouse notebooks need a Hugging Face token kept in Colab secrets.
+
+Part of the FlyRank AI ML internship. Code MIT (LICENSE); data terms in DATA_USE.md. Results are observed and directional decision-support, not a claim about how any search engine ranks pages.
+
+Claude відповідає
