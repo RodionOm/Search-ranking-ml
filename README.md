@@ -54,6 +54,20 @@ A content team can review a few dozen pages a week; the sites have tens of thous
 
 ---
 
+## What the evaluation checks
+
+Each row is a rule I held the analysis to, where it is done, and the evidence in the saved output.
+
+| Rule | Where | Evidence |
+|---|---|---|
+| Features come only from before the prediction point | `w03_feature_leakage_check`: 23 features from days 31–90 | trap test below: adding label-window impressions sends AUC to 0.999 |
+| A model is scored only on clients it never saw | `w05_model`: `GroupKFold` by client, out-of-fold scores | random KFold overstates gradient boosting: AUC 0.792 vs 0.698 grouped (`w06_validation_audit`) |
+| Judge the top of the list, not the whole ranking | `w05_model`: Precision@10/20/50/500 next to AUC | HGB has the best AUC (0.698) but a worse P@50 (0.72 vs 0.88) |
+| Beat a transparent rule before trusting a model | `w04_baseline_score` | rule P@50 0.80 vs logistic regression 0.88 |
+| One client cannot fill the queue | `w07_action_playbook`: at most 5 pages per client | 46 of the top 50 declined, across 14 clients |
+| Every queued page says why | `w07_action_playbook`: weight × standardised value, top 2 | reason codes per row, with how often each appears |
+| Say where the model is weak | `w06_validation_audit` | mid-traffic pages AUC 0.57–0.59 (see Limits) |
+
 ## Leakage: the most important finding
 
 The label compares the last 30 days with the previous 30. Any 90-day total contains the last 30 days, so it already holds the answer.
