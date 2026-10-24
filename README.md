@@ -10,6 +10,21 @@ My work from the FlyRank AI machine learning internship (Jul–Sep 2026). The re
 
 On clients the model had never seen, a logistic regression ranked pages so that **44 of its top 50 were observed to decline** (Precision@50 = 0.88), against 0.80 for my rule-based baseline and a 0.54 base rate.
 
+## The pipeline at a glance
+
+```mermaid
+flowchart LR
+    D[("Search + content data<br/>79M-row warehouse,<br/>30,000-page starter export")] --> F["Features from<br/>days 31-90 only"]
+    F --> L{"Leakage audit<br/>w03"}
+    L --> B["Rule baseline<br/>w04"]
+    B --> M["Logistic regression vs<br/>gradient boosting<br/>GroupKFold by client - w05"]
+    M --> V["Validation audit<br/>random vs grouped - w06"]
+    V --> Q["Review queue<br/>top 50, max 5 per client,<br/>2 reasons each - w07"]
+    Q --> A["Web app:<br/>page-refresh-ranker"]
+```
+
+The middle boxes are notebooks in `work/notebooks/`. Read left to right: what the data is, which columns are allowed, what the simplest rule achieves, which model beats it on clients it never saw, and how the scores become a list a person can work through. The last step is a separate repo, [page-refresh-ranker](https://github.com/RodionOm/page-refresh-ranker), which serves the same model behind a FastAPI app.
+
 ---
 
 ## The problem
@@ -58,6 +73,10 @@ The label compares the last 30 days with the previous 30. Any 90-day total conta
 
 Only data from before the prediction point is used.
 
+![AUC with honest features vs leaky columns](docs/figures/leakage_auc.png)
+
+The two red bars are the trap: a model that sees the label window, or 90-day totals that overlap it, looks close to perfect but would be useless at the moment a reviewer needs the list.
+
 ---
 
 ## Results (5-fold GroupKFold by client, out-of-fold)
@@ -70,6 +89,8 @@ Every page is scored by a model that never saw its client.
 | Baseline rule | 0.60 | 0.65 | 0.80 | 0.78 | 0.650 |
 | **Logistic regression** | **0.80** | **0.85** | **0.88** | **0.83** | 0.673 |
 | Gradient boosting (HGB) | 0.50 | 0.65 | 0.72 | 0.67 | 0.698 |
+
+![Precision at K on unseen clients](docs/figures/precision_at_k.png)
 
 Gradient boosting has the best AUC but a worse top of the list, which is what reviewers use. Logistic regression wins where it matters and gives readable reasons.
 
