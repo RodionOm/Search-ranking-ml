@@ -127,7 +127,7 @@ Adding a leaky column on purpose sends AUC to 1.0, which shows the evaluation ca
 
 ## The review queue
 
-`w07_action_playbook` turns the scores into a queue a human can use:
+`w07_action_playbook` turns the scores into a queue a human can use: 
 
 - Top 50 pages, **at most 5 per client**: 46 of 50 declined, 14 clients covered.
 - Two plain-English **reason codes** per page, from the logistic regression's weights (weight × how far the page is from average).
